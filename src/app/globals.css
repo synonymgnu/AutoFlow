@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@theme {
+  --color-ink: #0b0b0b;
+  --color-ink-soft: #1a1a1a;
+  --color-paper: #f4f4f1;
+  --color-line: #e1e1da;
+  --color-brand: #f5c400;      /* dourado da marca */
+  --color-brand-dark: #8a6500; /* dourado escuro: texto sobre fundo claro */
+  --color-ok: #137a4a;
+  --color-warn: #b45309;
+}
+body { background: var(--color-paper); color: var(--color-ink); }
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }

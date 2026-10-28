@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum StoreRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+enum StoreStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String?
+  email         String?       @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  memberships   StoreMember[]
+  customers     Customer[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Store {
+  id                String        @id @default(cuid())
+  name              String
+  slug              String        @unique
+  description       String?       @db.Text
+  logoUrl           String?
+  phone             String?
+  whatsappNumber    String?
+  status            StoreStatus   @default(ACTIVE)
+  deliveryEnabled   Boolean       @default(true)
+  pickupEnabled     Boolean       @default(true)
+  deliveryFee       Decimal       @default(0) @db.Decimal(10, 2)
+  minimumOrderValue Decimal       @default(0) @db.Decimal(10, 2)
+  pickupAddress     String?       @db.Text
+  nextOrderNumber   Int           @default(1)
+  members           StoreMember[]
+  invites           StaffInvite[]
+  categories        Category[]
+  brands            Brand[]
+  products          Product[]
+  customers         Customer[]
+  orders            Order[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model StoreMember {
+  storeId   String
+  userId    String
+  role      StoreRole @default(STAFF)
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@id([storeId, userId])
+  @@index([userId])
+}
+
+model StaffInvite {
+  id         String    @id @default(cuid())
+  storeId    String
+  email      String
+  role       StoreRole @default(STAFF)
+  acceptedAt DateTime?
+  store      Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@unique([storeId, email])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  storeId   String
+  name      String
+  slug      String
+  sortOrder Int       @default(0)
+  store     Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  @@unique([storeId, slug])
+}
+
+model Product {
+  id          String           @id @default(cuid())
+  storeId     String
+  categoryId  String?
+  name        String
+  slug        String
+  description String?          @db.Text
+  brand       String? // legado (texto); use brandId
+  brandId     String?
+  brandRef    Brand?           @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  images      String[]
+  status      ProductStatus    @default(DRAFT)
+  imageUrl    String?
+  store       Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category    Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  variants    ProductVariant[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([storeId, slug])
+  @@index([storeId, status])
+}
+
+model ProductVariant {
+  id             String   @id @default(cuid())
+  productId      String
+  name           String
+  sku            String?
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  stock          Int      @default(0)
+  isActive       Boolean  @default(true)
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems     OrderItem[]
+
+  @@index([productId])
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  READY
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum FulfillmentType {
+  DELIVERY
+  PICKUP
+}
+
+enum OrderChannel {
+  WEB
+  WHATSAPP
+  MANUAL
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  storeId      String
+  userId       String? // conta de login do cliente (carrinho e dados salvos)
+  name         String
+  phone        String
+  cep          String?
+  street       String?
+  number       String?
+  complement   String?
+  neighborhood String?
+  city         String?
+  state        String?
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orders       Order[]
+  createdAt    DateTime @default(now())
+
+  @@unique([storeId, phone])
+  @@unique([storeId, userId])
+}
+
+model Order {
+  id              String          @id @default(cuid())
+  storeId         String
+  customerId      String?
+  orderNumber     Int
+  trackingToken   String          @unique
+  status          OrderStatus     @default(PENDING)
+  channel         OrderChannel    @default(WEB)
+  fulfillmentType FulfillmentType
+  customerName    String
+  customerPhone   String
+  subtotal        Decimal         @db.Decimal(10, 2)
+  deliveryFee     Decimal         @default(0) @db.Decimal(10, 2)
+  discount        Decimal         @default(0) @db.Decimal(10, 2)
+  total           Decimal         @db.Decimal(10, 2)
+  notes           String?         @db.Text
+  paidAt          DateTime?
+  store           Store           @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  customer        Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([storeId, orderNumber])
+  @@index([storeId, status, createdAt])
+}
+
+model OrderItem {
+  id          String          @id @default(cuid())
+  orderId     String
+  variantId   String?
+  productName String
+  variantName String
+  quantity    Int
+  unitPrice   Decimal         @db.Decimal(10, 2)
+  lineTotal   Decimal         @db.Decimal(10, 2)
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+model Brand {
+  id       String    @id @default(cuid())
+  storeId  String
+  name     String
+  slug     String
+  logoUrl  String?
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([storeId, slug])
+}

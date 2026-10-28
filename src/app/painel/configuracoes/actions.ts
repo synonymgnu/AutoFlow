@@ -19,7 +19,7 @@ const schema = z.object({
 
 export async function saveSettings(fd: FormData) {
   const { store } = await requireStoreRole("OWNER");
-  const d = schema.safeParse(Object.fromEntries(fd));
+  const d = schema.safeParse(Object.fromEntries(fd.entries()));
   const delivery = fd.get("deliveryEnabled") === "on", pickup = fd.get("pickupEnabled") === "on";
   const erro = !d.success ? d.error.issues[0]?.message ?? "Dados inválidos." : !delivery && !pickup ? "Habilite entrega, retirada ou os dois." : "";
   if (erro || !d.success) redirect(`/painel/configuracoes?erro=${encodeURIComponent(erro)}`);

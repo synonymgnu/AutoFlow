@@ -233,6 +233,9 @@ model Order {
   total           Decimal         @db.Decimal(10, 2)
   notes           String?         @db.Text
   paidAt          DateTime?
+  paymentMethod   String?
+  transactionNsu  String?         @unique
+  receiptUrl      String?
   store           Store           @relation(fields: [storeId], references: [id], onDelete: Restrict)
   customer        Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
   items           OrderItem[]

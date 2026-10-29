@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { onlineEnabled } from "@/lib/infinitepay";
 import { getCurrentStore } from "@/lib/store";
 import { CheckoutForm } from "./checkout-form";
 
@@ -14,7 +15,7 @@ export default async function Checkout() {
   return (
     <main className="mx-auto max-w-2xl px-5 py-10">
       <h1 className="text-2xl font-bold tracking-tight">Finalizar pedido</h1>
-      <CheckoutForm
+      <CheckoutForm onlineEnabled={onlineEnabled()}
         settings={{ deliveryEnabled: s.deliveryEnabled, pickupEnabled: s.pickupEnabled, deliveryFee: Number(s.deliveryFee), minimumOrderValue: Number(s.minimumOrderValue), pickupAddress: s.pickupAddress }}
         initial={{
           name: c?.name ?? session.user.name ?? "", phone: c?.phone ?? "",

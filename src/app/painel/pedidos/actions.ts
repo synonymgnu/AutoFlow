@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireStoreRole } from "@/lib/permissions";
-import { STATUS } from "@/lib/order-status";
+import { OPEN, STATUS } from "@/lib/order-status";
 
 class UserError extends Error {}
 
@@ -89,6 +89,22 @@ export async function mudarStatus(fd: FormData) {
       }
     }
     await tx.order.update({ where: { id: o.id }, data: { status: next, ...(next === "COMPLETED" ? { paidAt: o.paidAt ?? new Date() } : {}) } });
+  });
+  revalidatePath("/painel", "layout");
+}
+
+// Só o dono exclui. Se o pedido ainda não foi entregue nem cancelado, devolve o estoque antes de apagar.
+export async function excluirPedido(fd: FormData) {
+  const { store } = await requireStoreRole("OWNER");
+  await prisma.$transaction(async (tx) => {
+    const o = await tx.order.findFirst({ where: { id: String(fd.get("id")), storeId: store.id }, include: { items: true } });
+    if (!o) return;
+    if (OPEN.includes(o.status)) {
+      for (const it of o.items) {
+        if (it.variantId) await tx.productVariant.update({ where: { id: it.variantId }, data: { stock: { increment: it.quantity } } });
+      }
+    }
+    await tx.order.delete({ where: { id: o.id } });
   });
   revalidatePath("/painel", "layout");
 }

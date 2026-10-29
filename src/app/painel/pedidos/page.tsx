@@ -4,12 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { requireStoreRole } from "@/lib/permissions";
 import { brl } from "@/lib/format";
 import { STATUS } from "@/lib/order-status";
-import { mudarStatus } from "./actions";
+import { ConfirmButton } from "@/components/painel/confirm-button";
+import { excluirPedido, mudarStatus } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Pedidos({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
-  const { store } = await requireStoreRole();
+  const { store, role } = await requireStoreRole();
   const { status } = await searchParams;
   const filtro = status && status in STATUS ? (status as OrderStatus) : undefined;
   const orders = await prisma.order.findMany({
@@ -46,7 +47,7 @@ export default async function Pedidos({ searchParams }: { searchParams: Promise<
                 <td className="px-4 py-3 text-ink/80">{o.items.map((i) => <p key={i.id}>{i.quantity}× {i.productName} ({i.variantName})</p>)}</td>
                 <td className="px-4 py-3 font-semibold">{brl(o.total)}</td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS[o.status].cls}`}>{STATUS[o.status].label}</span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS[o.status].cls}`}>{STATUS[o.status].label}</span>{o.paidAt && <span className="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-ok">Pago</span>}
                   {o.status !== "CANCELLED" && (
                     <form action={mudarStatus} className="mt-2 flex gap-1">
                       <input type="hidden" name="id" value={o.id} />
@@ -54,6 +55,12 @@ export default async function Pedidos({ searchParams }: { searchParams: Promise<
                         {(Object.keys(STATUS) as OrderStatus[]).map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}
                       </select>
                       <button className="rounded-lg border border-line px-2 py-1 text-xs hover:bg-paper">OK</button>
+                    </form>
+                  )}
+                  {role === "OWNER" && (
+                    <form action={excluirPedido} className="mt-2">
+                      <input type="hidden" name="id" value={o.id} />
+                      <ConfirmButton message={`Excluir o pedido #${o.orderNumber} definitivamente? Isso apaga o pedido do histórico e dos relatórios.`} className="text-xs text-red-700 underline">excluir pedido</ConfirmButton>
                     </form>
                   )}
                 </td>

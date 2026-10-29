@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { createPaymentLink, onlineEnabled } from "@/lib/infinitepay";
 import { getCurrentStore } from "@/lib/store";
 
 class UserError extends Error {}
@@ -38,11 +39,12 @@ const schema = z.object({
   name: z.string().trim().min(2, "Informe seu nome."),
   phone: z.string().transform((s) => s.replace(/\D/g, "")).pipe(z.string().min(10, "Informe o telefone com DDD.")),
   fulfillment: z.enum(["DELIVERY", "PICKUP"]),
+  payment: z.enum(["ONLINE", "WHATSAPP"]).default("WHATSAPP"),
   address: address.optional(),
   notes: z.string().trim().max(500).optional(),
   items: z.array(z.object({ variantId: z.string().min(1), qty: z.number().int().min(1).max(99) })).min(1).max(30),
 });
-export type Result = { ok: true; url: string } | { ok: false; error: string };
+export type Result = { ok: true; url: string; external?: boolean } | { ok: false; error: string };
 
 // Regras de compra aplicadas no servidor (o navegador não é confiável):
 // 1) exige login; 2) loja ativa; 3) modalidade habilitada; 4) entrega exige endereço com CEP;
@@ -107,7 +109,7 @@ export async function finalizarPedido(input: unknown): Promise<Result> {
         ? `Endereço: ${a.street}, ${a.number}${a.complement ? ` (${a.complement})` : ""} - ${a.neighborhood}, ${a.city}/${a.state} - CEP ${a.cep.replace(/(\d{5})(\d{3})/, "$1-$2")}`
         : null;
       const notes = [endereco, d.notes || null].filter(Boolean).join("\n");
-      await tx.order.create({
+      const created = await tx.order.create({
         data: {
           storeId: store.id, customerId: customer.id, orderNumber: s.nextOrderNumber - 1, trackingToken: token,
           channel: store.whatsappNumber ? "WHATSAPP" : "WEB", fulfillmentType: d.fulfillment,
@@ -115,8 +117,13 @@ export async function finalizarPedido(input: unknown): Promise<Result> {
           notes: notes || null, items: { create: items },
         },
       });
-      return { n: s.nextOrderNumber - 1, token };
+      return { n: s.nextOrderNumber - 1, token, id: created.id };
     });
+    if (d.payment === "ONLINE" && onlineEnabled()) {
+      const full = await prisma.order.findUnique({ where: { id: res.id }, include: { items: true } });
+      const link = full ? await createPaymentLink(full, session?.user?.email) : null;
+      if (link) return { ok: true, url: link, external: true };
+    }
     return { ok: true, url: `/pedido/${res.n}?token=${res.token}` };
   } catch (e) {
     return { ok: false, error: e instanceof UserError ? e.message : "Não foi possível finalizar o pedido. Tente novamente." };

@@ -11,7 +11,7 @@ type Initial = { name: string; phone: string; cep: string; street: string; numbe
 
 const maskCep = (v: string) => v.replace(/\D/g, "").slice(0, 8).replace(/^(\d{5})(\d)/, "$1-$2");
 
-export function CheckoutForm({ settings, initial }: { settings: Settings; initial: Initial }) {
+export function CheckoutForm({ settings, initial, onlineEnabled }: { settings: Settings; initial: Initial; onlineEnabled: boolean }) {
   const { items, total, clear } = useCart();
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -22,6 +22,7 @@ export function CheckoutForm({ settings, initial }: { settings: Settings; initia
   const [addr, setAddr] = useState({ ...initial, cep: maskCep(initial.cep) });
   const [buscando, setBuscando] = useState(false);
   const [cepMsg, setCepMsg] = useState("");
+  const [pay, setPay] = useState<"ONLINE" | "WHATSAPP">(onlineEnabled ? "ONLINE" : "WHATSAPP");
   const fee = mode === "DELIVERY" ? settings.deliveryFee : 0;
   const input = "w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm focus:border-brand";
   const set = (k: keyof typeof addr) => (e: React.ChangeEvent<HTMLInputElement>) => setAddr((a) => ({ ...a, [k]: e.target.value }));
@@ -53,11 +54,11 @@ export function CheckoutForm({ settings, initial }: { settings: Settings; initia
     setErro("");
     start(async () => {
       const r = await finalizarPedido({
-        name, phone, fulfillment: mode, notes,
+        name, phone, fulfillment: mode, payment: pay, notes,
         address: mode === "DELIVERY" ? { cep: addr.cep, street: addr.street, number: addr.number, complement: addr.complement || undefined, neighborhood: addr.neighborhood, city: addr.city, state: addr.state } : undefined,
         items: items.map((i) => ({ variantId: i.variantId, qty: i.qty })),
       });
-      if (r.ok) { clear(); router.push(r.url); } else setErro(r.error);
+      if (r.ok) { clear(); if (r.external) window.location.href = r.url; else router.push(r.url); } else setErro(r.error);
     });
   }
 
@@ -95,6 +96,17 @@ export function CheckoutForm({ settings, initial }: { settings: Settings; initia
         )}
         <textarea name="notes" rows={2} placeholder="Observações (opcional)" className={input} />
       </section>
+
+      {onlineEnabled && (
+        <section className="space-y-3 rounded-xl border border-line bg-white p-5">
+          <h2 className="font-semibold">Pagamento</h2>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setPay("ONLINE")} className={tab(pay === "ONLINE")}>Pix ou cartão</button>
+            <button type="button" onClick={() => setPay("WHATSAPP")} className={tab(pay === "WHATSAPP")}>Combinar no WhatsApp</button>
+          </div>
+          <p className="text-xs text-ink/55">{pay === "ONLINE" ? "Você paga agora em um ambiente seguro da InfinitePay." : "Enviamos o pedido pelo WhatsApp e combinamos o pagamento."}</p>
+        </section>
+      )}
 
       <section className="rounded-xl border border-line bg-white p-5 text-sm">
         {items.map((i) => <div key={i.variantId} className="flex justify-between py-0.5"><span>{i.qty}× {i.productName} ({i.variantName})</span><span>{brl(i.qty * i.price)}</span></div>)}

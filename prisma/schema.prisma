@@ -13,15 +13,28 @@ enum StoreRole {
   MANAGER
   STAFF
 }
+
 enum StoreStatus {
   ACTIVE
   SUSPENDED
   PENDING
 }
+
 enum ProductStatus {
   DRAFT
   ACTIVE
   ARCHIVED
+}
+
+enum ShowcaseMode {
+  AUTOMATIC
+  MANUAL
+  MIXED
+}
+
+enum ShowcaseSectionKey {
+  OFFERS
+  FEATURED
 }
 
 model User {
@@ -74,29 +87,30 @@ model VerificationToken {
 }
 
 model Store {
-  id                String        @id @default(cuid())
-  name              String
-  slug              String        @unique
-  description       String?       @db.Text
-  logoUrl           String?
-  phone             String?
-  whatsappNumber    String?
-  status            StoreStatus   @default(ACTIVE)
-  deliveryEnabled   Boolean       @default(true)
-  pickupEnabled     Boolean       @default(true)
-  deliveryFee       Decimal       @default(0) @db.Decimal(10, 2)
-  minimumOrderValue Decimal       @default(0) @db.Decimal(10, 2)
-  pickupAddress     String?       @db.Text
-  nextOrderNumber   Int           @default(1)
-  members           StoreMember[]
-  invites           StaffInvite[]
-  categories        Category[]
-  brands            Brand[]
-  products          Product[]
-  customers         Customer[]
-  orders            Order[]
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                 String              @id @default(cuid())
+  name               String
+  slug               String              @unique
+  description        String?             @db.Text
+  logoUrl            String?
+  phone              String?
+  whatsappNumber     String?
+  status             StoreStatus         @default(ACTIVE)
+  deliveryEnabled    Boolean             @default(true)
+  pickupEnabled      Boolean             @default(true)
+  deliveryFee        Decimal             @default(0) @db.Decimal(10, 2)
+  minimumOrderValue  Decimal             @default(0) @db.Decimal(10, 2)
+  pickupAddress      String?             @db.Text
+  nextOrderNumber    Int                 @default(1)
+  members            StoreMember[]
+  storefrontSections StorefrontSection[]
+  invites            StaffInvite[]
+  categories         Category[]
+  brands             Brand[]
+  products           Product[]
+  customers          Customer[]
+  orders             Order[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model StoreMember {
@@ -136,38 +150,39 @@ model Category {
 }
 
 model Product {
-  id          String           @id @default(cuid())
-  storeId     String
-  categoryId  String?
-  name        String
-  slug        String
-  description String?          @db.Text
-  brand       String? // legado (texto); use brandId
-  brandId     String?
-  brandRef    Brand?           @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  images      String[]
-  status      ProductStatus    @default(DRAFT)
-  imageUrl    String?
-  store       Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  category    Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  variants    ProductVariant[]
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id            String                  @id @default(cuid())
+  storeId       String
+  categoryId    String?
+  name          String
+  slug          String
+  description   String?                 @db.Text
+  brand         String? // legado (texto); use brandId
+  brandId       String?
+  brandRef      Brand?                  @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  images        String[]
+  status        ProductStatus           @default(DRAFT)
+  imageUrl      String?
+  store         Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category      Category?               @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  variants      ProductVariant[]
+  showcaseItems StorefrontSectionItem[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
 
   @@unique([storeId, slug])
   @@index([storeId, status])
 }
 
 model ProductVariant {
-  id             String   @id @default(cuid())
+  id             String      @id @default(cuid())
   productId      String
   name           String
   sku            String?
-  price          Decimal  @db.Decimal(10, 2)
-  compareAtPrice Decimal? @db.Decimal(10, 2)
-  stock          Int      @default(0)
-  isActive       Boolean  @default(true)
-  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price          Decimal     @db.Decimal(10, 2)
+  compareAtPrice Decimal?    @db.Decimal(10, 2)
+  stock          Int         @default(0)
+  isActive       Boolean     @default(true)
+  product        Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   orderItems     OrderItem[]
 
   @@index([productId])
@@ -271,4 +286,40 @@ model Brand {
   products Product[]
 
   @@unique([storeId, slug])
+}
+
+model StorefrontSection {
+  id        String             @id @default(cuid())
+  storeId   String
+  key       ShowcaseSectionKey
+  title     String
+  subtitle  String?
+  enabled   Boolean            @default(true)
+  mode      ShowcaseMode       @default(AUTOMATIC)
+  maxItems  Int                @default(8)
+  sortOrder Int                @default(0)
+
+  store Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items StorefrontSectionItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([storeId, key])
+  @@index([storeId, enabled, sortOrder])
+}
+
+model StorefrontSectionItem {
+  id        String @id @default(cuid())
+  sectionId String
+  productId String
+  sortOrder Int    @default(0)
+
+  section StorefrontSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  product Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([sectionId, productId])
+  @@index([sectionId, sortOrder])
 }

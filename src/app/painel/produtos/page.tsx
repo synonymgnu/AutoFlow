@@ -5,7 +5,6 @@ import { brl } from "@/lib/format";
 import { alternarStatus, excluirProduto } from "./actions";
 import { ConfirmButton } from "@/components/painel/confirm-button";
 
-
 export const dynamic = "force-dynamic";
 
 export default async function Produtos() {
@@ -58,9 +57,9 @@ export default async function Produtos() {
                     ) : (
                       <div className="h-12 w-12 rounded bg-paper" />
                     )}
-                    <div>
-                      <p className="font-medium">{p.name}</p>
-                      <p className="text-ink/55">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium ">{p.name}</p>
+                      <p className="text-ink/55 truncate">
                         {p.brandRef?.name ?? p.brand ?? "Sem marca"}
                       </p>
                     </div>

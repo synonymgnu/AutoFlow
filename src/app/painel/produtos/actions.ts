@@ -125,3 +125,11 @@ export async function excluirCategoria(fd: FormData) {
   revalidatePath("/painel/categorias");
   revalidatePath("/");
 }
+
+export async function excluirProduto(fd: FormData) {
+  const { store } = await requireStoreRole("OWNER");
+  // storeId na busca garante que só apaga produto desta loja
+  await prisma.product.deleteMany({ where: { id: String(fd.get("id")), storeId: store.id } });
+  revalidatePath("/painel/produtos");
+  revalidatePath("/");
+}

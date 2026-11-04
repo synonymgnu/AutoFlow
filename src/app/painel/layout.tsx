@@ -9,7 +9,7 @@ type L = [string, string];
 export default async function PainelLayout({ children }: { children: React.ReactNode }) {
   const { store, user, role } = await requireStoreRole("STAFF");
   const main: L[] = [["/painel", "Resumo"], ["/painel/pedidos", "Pedidos"], ["/painel/produtos", "Produtos"], ...(role !== "STAFF" ? [["/painel/relatorios", "Relatórios"] as L] : [])];
-  const more: L[] = [["/painel/marcas", "Marcas"], ["/painel/categorias", "Categorias"], ...(role === "OWNER" ? [["/painel/configuracoes", "Configurações"] as L] : []), ["/", "Ver a loja"]];
+  const more: L[] = [...(role !== "STAFF" ? [["/painel/vitrine", "Vitrine"] as L] : []), ["/painel/marcas", "Marcas"], ["/painel/categorias", "Categorias"], ...(role === "OWNER" ? [["/painel/configuracoes", "Configurações"] as L] : []), ["/", "Ver a loja"]];
   const out = async () => { "use server"; await signOut({ redirectTo: "/login" }); };
   return (
     <div className="min-h-screen md:grid md:grid-cols-[15rem_1fr]">

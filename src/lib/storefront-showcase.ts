@@ -12,7 +12,7 @@ type SectionConfig = {
   sortOrder: number;
 };
 
-const DEFAULT_SECTIONS: SectionConfig[] = [
+export const DEFAULT_SECTIONS: SectionConfig[] = [
   {
     key: "OFFERS",
     title: "Ofertas especiais",
@@ -92,7 +92,11 @@ export async function getStorefrontShowcase(storeId: string) {
   return sections
     .filter((section) => section.enabled)
     .map((section) => {
-      const manuallySelected = section.items
+      // No modo Automático a seleção manual guardada é ignorada
+      // (senão esses produtos sumiriam da lista automática).
+      const usesManual = section.mode !== "AUTOMATIC";
+
+      const manuallySelected = (usesManual ? section.items : [])
         .map((item) => item.product)
         .filter(
           (product) =>

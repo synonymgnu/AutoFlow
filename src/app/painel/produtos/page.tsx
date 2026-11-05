@@ -1,23 +1,31 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import { requireStoreRole } from "@/lib/permissions";
 import { brl } from "@/lib/format";
-import { alternarStatus, excluirProduto } from "./actions";
+import { alternarStatus, excluirProduto, getProdutosPaginados } from "./actions";
 import { ConfirmButton } from "@/components/painel/confirm-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function Produtos() {
+interface PageProps {
+  searchParams: Promise<{ page?: string }> | { page?: string };
+}
+
+export default async function ProdutosPage({ searchParams }: PageProps) {
   const { store, role } = await requireStoreRole();
-  const products = await prisma.product.findMany({
-    where: { storeId: store.id },
-    include: { variants: { orderBy: { price: "asc" } }, brandRef: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const resolvedParams = await searchParams;
+  const currentPage = Number(resolvedParams?.page) || 1;
+
+  const { products, totalPages, totalCount } = await getProdutosPaginados(
+    store.id,
+    currentPage
+  );
+
   return (
     <>
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold tracking-tight">Produtos</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          Produtos ({totalCount})
+        </h1>
         <Link
           href="/painel/produtos/novo"
           className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-ink hover:brightness-110"
@@ -25,6 +33,7 @@ export default async function Produtos() {
           Novo produto
         </Link>
       </div>
+
       <div className="mt-6 overflow-x-auto rounded-xl border border-line bg-white">
         <table className="w-full min-w-[40rem] text-left text-sm">
           <thead className="border-b border-line bg-paper/60 text-ink/60">
@@ -39,7 +48,7 @@ export default async function Produtos() {
             {products.length === 0 && (
               <tr>
                 <td colSpan={4} className="p-6 text-center text-ink/60">
-                  Nenhum produto ainda. Clique em “Novo produto”.
+                  Nenhum produto cadastrado nesta página.
                 </td>
               </tr>
             )}
@@ -58,7 +67,7 @@ export default async function Produtos() {
                       <div className="h-12 w-12 rounded bg-paper" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium ">{p.name}</p>
+                      <p className="font-medium">{p.name}</p>
                       <p className="text-ink/55 truncate">
                         {p.brandRef?.name ?? p.brand ?? "Sem marca"}
                       </p>
@@ -123,6 +132,44 @@ export default async function Produtos() {
             ))}
           </tbody>
         </table>
+
+        {/* NAVEGAÇÃO DE PAGINAÇÃO */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-line px-4 py-3">
+            <p className="text-sm text-ink/70">
+              Página <span className="font-semibold text-ink">{currentPage}</span> de{" "}
+              <span className="font-semibold text-ink">{totalPages}</span>
+            </p>
+
+            <div className="flex gap-2">
+              {currentPage > 1 ? (
+                <Link
+                  href={`/painel/produtos?page=${currentPage - 1}`}
+                  className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-paper"
+                >
+                  Anterior
+                </Link>
+              ) : (
+                <span className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink/30 cursor-not-allowed">
+                  Anterior
+                </span>
+              )}
+
+              {currentPage < totalPages ? (
+                <Link
+                  href={`/painel/produtos?page=${currentPage + 1}`}
+                  className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-paper"
+                >
+                  Próxima
+                </Link>
+              ) : (
+                <span className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink/30 cursor-not-allowed">
+                  Próxima
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

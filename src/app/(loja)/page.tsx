@@ -1,6 +1,6 @@
-
 import Image from "next/image";
 import Link from "next/link";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentStore } from "@/lib/store";
@@ -15,6 +15,7 @@ type SP = {
   q?: string;
   categoria?: string;
   ordem?: string;
+  page?: string;
 };
 
 const currency = (value: number) =>
@@ -23,17 +24,40 @@ const currency = (value: number) =>
     currency: "BRL",
   }).format(value);
 
+  //local onde estava dando problema por repetição do export default
 export default async function Vitrine({
   searchParams,
 }: {
   searchParams: Promise<SP>;
 }) {
-  const { q = "", categoria, ordem = "novos" } = await searchParams;
+  const resolvedParams = await searchParams;
+  const { q = "", categoria, ordem = "novos", page = "1" } = resolvedParams;
 
   const store = await getCurrentStore();
   const term = q.trim().slice(0, 60);
 
-  const [categories, found, showcase] = await Promise.all([
+  //logica de paginação aqui abaixo 
+  const ITEMS_PER_PAGE = 8;
+  const currentPage = Math.max(1, Number(page) || 1);
+  const skip = (currentPage - 1) * ITEMS_PER_PAGE;
+
+  //extrair o where para usar tanto na busca quanto na contagem
+  const productsWhere: Prisma.ProductWhereInput = {
+    storeId: store.id,
+    status: "ACTIVE",
+    ...(categoria ? { category: { slug: categoria } } : {}),
+    ...(term
+      ? {
+          OR: [
+            { name: { contains: term, mode: "insensitive" } },
+            { brandRef: { name: { contains: term, mode: "insensitive" } } },
+            { description: { contains: term, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const [categories, found, showcase, totalCount] = await Promise.all([
     prisma.category.findMany({
       where: {
         storeId: store.id,
@@ -43,40 +67,7 @@ export default async function Vitrine({
     }),
 
     prisma.product.findMany({
-      where: {
-        storeId: store.id,
-        status: "ACTIVE",
-        ...(categoria
-          ? { category: { slug: categoria } }
-          : {}),
-        ...(term
-          ? {
-              OR: [
-                {
-                  name: {
-                    contains: term,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  brandRef: {
-                    name: {
-                      contains: term,
-                      mode: "insensitive",
-                    },
-                  },
-                },
-                {
-                  description: {
-                    contains: term,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
-      },
-
+      where: productsWhere,
       include: {
         brandRef: { select: { name: true } },
         variants: {
@@ -92,38 +83,51 @@ export default async function Vitrine({
           orderBy: { price: "asc" },
         },
       },
-
       orderBy: { createdAt: "desc" },
+      take: ITEMS_PER_PAGE,
+      skip,
     }),
 
     getStorefrontShowcase(store.id),
+
+    prisma.product.count({
+      where: productsWhere,
+    }),
   ]);
 
-  const pr = (
-    p: (typeof found)[number],
-    none: number
-  ) => (p.variants.length ? Number(p.variants[0].price) : none);
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
+  const pr = (p: (typeof found)[number], none: number) =>
+    p.variants.length ? Number(p.variants[0].price) : none;
+
+  // Mantém a ordenação em memória (agora aplicada apenas aos itens da página atual)
   const products =
     ordem === "menor"
-      ? [...found].sort(
-          (a, b) => pr(a, Infinity) - pr(b, Infinity)
-        )
+      ? [...found].sort((a, b) => pr(a, Infinity) - pr(b, Infinity))
       : ordem === "maior"
-        ? [...found].sort(
-            (a, b) => pr(b, -1) - pr(a, -1)
-          )
-        : found;
+      ? [...found].sort((a, b) => pr(b, -1) - pr(a, -1))
+      : found;
 
-  const href = (c?: string) => {
+  // url para troca de Categorias (reseta a página para 1) provavelmente aqui será onde criar a nova implementação de categorizar por estágios de lavagem.
+  const getCategoryUrl = (c?: string) => {
     const sp = new URLSearchParams();
-
     if (term) sp.set("q", term);
     if (c) sp.set("categoria", c);
     if (ordem !== "novos") sp.set("ordem", ordem);
+    
+    const s = sp.toString();
+    return `${s ? `/?${s}` : "/"}#produtos`;
+  };
+
+  //url   (mantém a categoria e a busca atual)
+  const getPageUrl = (p: number) => {
+    const sp = new URLSearchParams();
+    if (term) sp.set("q", term);
+    if (categoria) sp.set("categoria", categoria);
+    if (ordem !== "novos") sp.set("ordem", ordem);
+    if (p > 1) sp.set("page", p.toString());
 
     const s = sp.toString();
-
     return `${s ? `/?${s}` : "/"}#produtos`;
   };
 
@@ -177,8 +181,7 @@ export default async function Vitrine({
           const discountedVariant = product.variants.find(
             (variant) =>
               variant.compareAtPrice !== null &&
-              Number(variant.compareAtPrice) >
-                Number(variant.price)
+              Number(variant.compareAtPrice) > Number(variant.price)
           );
 
           const variant =
@@ -187,25 +190,19 @@ export default async function Vitrine({
               : product.variants[0];
 
           const price = Number(variant.price);
-
           const originalPrice = variant.compareAtPrice
             ? Number(variant.compareAtPrice)
             : null;
 
-          const hasDiscount =
-            originalPrice !== null && originalPrice > price;
+          const hasDiscount = originalPrice !== null && originalPrice > price;
 
-          const description =
-            hasDiscount
-              ? `${variant.name} · De ${currency(originalPrice)} por ${currency(price)}`
-              : `${variant.name} · ${currency(price)}`;
+          const description = hasDiscount
+            ? `${variant.name} · De ${currency(originalPrice)} por ${currency(price)}`
+            : `${variant.name} · ${currency(price)}`;
 
           return {
             id: product.id,
-            imageSrc:
-              product.images[0] ??
-              product.imageUrl ??
-              "/logo.png",
+            imageSrc: product.images[0] ?? product.imageUrl ?? "/logo.png",
             imageAlt: product.name,
             tag:
               section.key === "OFFERS"
@@ -215,21 +212,14 @@ export default async function Vitrine({
                 : "Em destaque",
             title: product.name,
             description,
-            brandLogoSrc:
-              product.brandRef?.logoUrl ?? undefined,
-            brandName:
-              product.brandRef?.name ??
-              product.brand ??
-              store.name,
+            brandLogoSrc: product.brandRef?.logoUrl ?? undefined,
+            brandName: product.brandRef?.name ?? product.brand ?? store.name,
             href: `/produto/${product.slug}`,
           };
         });
 
         return (
-          <section
-            key={section.id}
-            className="mx-auto max-w-6xl px-5 pt-10"
-          >
+          <section key={section.id} className="mx-auto max-w-6xl px-5 pt-10">
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-bold tracking-tight text-ink">
@@ -244,9 +234,7 @@ export default async function Vitrine({
               </div>
 
               <span className="text-xs font-medium uppercase tracking-wider text-brand-dark">
-                {section.key === "OFFERS"
-                  ? "Ofertas"
-                  : "Seleção especial"}
+                {section.key === "OFFERS" ? "Ofertas" : "Seleção especial"}
               </span>
             </div>
 
@@ -256,10 +244,8 @@ export default async function Vitrine({
       })}
 
       {/* Catálogo */}
-      <main
-        id="produtos"
-        className="mx-auto max-w-6xl scroll-mt-20 px-5 py-10"
-      >
+      <main id="produtos" className="mx-auto max-w-6xl scroll-mt-20 px-5 py-10">
+        {/* Quando o usuário faz uma nova busca, a URL não tem page=, resetando para a primeira página automaticamente */}
         <form action="/" className="flex flex-col gap-3 sm:flex-row">
           <input
             name="q"
@@ -269,13 +255,7 @@ export default async function Vitrine({
             className="w-full rounded-lg border border-line bg-white px-4 py-2.5 text-sm focus:border-brand"
           />
 
-          {categoria && (
-            <input
-              type="hidden"
-              name="categoria"
-              value={categoria}
-            />
-          )}
+          {categoria && <input type="hidden" name="categoria" value={categoria} />}
 
           <select
             name="ordem"
@@ -298,14 +278,14 @@ export default async function Vitrine({
             className="mt-4 flex gap-2 overflow-x-auto pb-1"
             aria-label="Categorias"
           >
-            <Link href={href()} className={chip(!categoria)}>
+            <Link href={getCategoryUrl()} className={chip(!categoria)}>
               Todos
             </Link>
 
             {categories.map((c) => (
               <Link
                 key={c.id}
-                href={href(c.slug)}
+                href={getCategoryUrl(c.slug)}
                 className={chip(categoria === c.slug)}
               >
                 {c.name}
@@ -315,18 +295,14 @@ export default async function Vitrine({
         )}
 
         <p className="mt-6 text-sm text-ink/60">
-          {products.length}{" "}
-          {products.length === 1 ? "produto" : "produtos"}
+          {totalCount} {totalCount === 1 ? "produto encontrado" : "produtos encontrados"}
           {term && <> para “{term}”</>}
         </p>
 
         {products.length === 0 ? (
           <p className="mt-4 rounded-xl border border-dashed border-line bg-white p-8 text-center text-ink/60">
             Nenhum produto encontrado.{" "}
-            <Link
-              href="/#produtos"
-              className="text-brand-dark underline"
-            >
+            <Link href="/#produtos" className="text-brand-dark underline">
               Limpar filtros
             </Link>
           </p>
@@ -343,7 +319,7 @@ export default async function Vitrine({
                   className="absolute inset-0 z-0"
                 />
 
-                {(p.images[0] ?? p.imageUrl) ? (
+                {p.images[0] ?? p.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={p.images[0] ?? p.imageUrl ?? ""}
@@ -363,11 +339,9 @@ export default async function Vitrine({
                     </p>
                   )}
 
-                  <h3 className="font-semibold leading-snug">
-                    {p.name}
-                  </h3>
+                  <h3 className="font-semibold leading-snug">{p.name}</h3>
 
-                  <div className="relative z-10">
+                  <div className="relative z-10 mt-1">
                     <AddToCart
                       productName={p.name}
                       variants={p.variants.map((v) => ({
@@ -381,6 +355,44 @@ export default async function Vitrine({
               </li>
             ))}
           </ul>
+        )}
+
+        {/* NAVEGAÇÃO DA PAGINAÇÃO */}
+        {totalPages > 1 && (
+          <div className="mt-10 flex items-center justify-between border-t border-line pt-6">
+            <p className="text-sm text-ink/70">
+              Página <span className="font-semibold text-ink">{currentPage}</span> de{" "}
+              <span className="font-semibold text-ink">{totalPages}</span>
+            </p>
+
+            <div className="flex gap-2">
+              {currentPage > 1 ? (
+                <Link
+                  href={getPageUrl(currentPage - 1)}
+                  className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium hover:bg-paper"
+                >
+                  Anterior
+                </Link>
+              ) : (
+                <span className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium text-ink/30 cursor-not-allowed">
+                  Anterior
+                </span>
+              )}
+
+              {currentPage < totalPages ? (
+                <Link
+                  href={getPageUrl(currentPage + 1)}
+                  className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium hover:bg-paper"
+                >
+                  Próxima
+                </Link>
+              ) : (
+                <span className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium text-ink/30 cursor-not-allowed">
+                  Próxima
+                </span>
+              )}
+            </div>
+          </div>
         )}
       </main>
 

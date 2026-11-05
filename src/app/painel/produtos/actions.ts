@@ -9,6 +9,8 @@ const slugify = (s: string) =>
   s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 const opt = z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.number().positive().optional());
 
+const ITEMS_PER_PAGE = 10;
+
 const variant = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1, "Toda variante precisa de um nome (ex.: 500 ml)."),
@@ -28,6 +30,37 @@ const schema = z.object({
   variants: z.array(variant).min(1, "Cadastre ao menos uma variante.").max(20),
 });
 
+
+export async function getProdutosPaginados(storeId: string, page: number = 1) {
+  const currentPage = Math.max(1, page);
+  const skip = (currentPage - 1) * ITEMS_PER_PAGE;
+
+  const [products, totalCount] = await prisma.$transaction([
+    prisma.product.findMany({
+      where: { storeId },
+      include: {
+        category: true,
+        brandRef: true,
+        variants: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: ITEMS_PER_PAGE,
+      skip: skip,
+    }),
+    prisma.product.count({
+      where: { storeId },
+    }),
+  ]);
+
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+
+  return {
+    products,
+    totalCount,
+    totalPages,
+    currentPage,
+  };
+}
 export async function saveProduct(fd: FormData) {
   const { store, role } = await requireStoreRole("MANAGER");
   let variants: unknown = [];

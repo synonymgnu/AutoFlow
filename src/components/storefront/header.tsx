@@ -1,12 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
-import { auth, signOut } from "@/lib/auth";
+import { signOut } from "@/lib/auth";
+import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getCurrentStore } from "@/lib/store";
 import { CartButton } from "./cart-ui";
 
 export async function StoreHeader() {
-  const [store, session] = await Promise.all([getCurrentStore(), auth()]);
+  const [store, session] = await Promise.all([getCurrentStore(), getSession()]);
   const isStaff = session?.user?.id
     ? Boolean(await prisma.storeMember.findUnique({ where: { storeId_userId: { storeId: store.id, userId: session.user.id } } }))
     : false;

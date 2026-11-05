@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentStore } from "@/lib/store";
 import { brl } from "@/lib/format";
+import { optimizeImage } from "@/lib/image";
 import { ProductView } from "./product-view";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export default async function Produto({ params }: { params: Promise<{ slug: stri
                 <Link href={`/produto/${r.slug}`} className="block overflow-hidden rounded-xl border border-line bg-white hover:shadow-lg">
                   {(r.images[0] ?? r.imageUrl)
                     // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={r.images[0] ?? r.imageUrl ?? ""} alt={r.name} className="aspect-square w-full object-cover" />
+                    ? <img src={optimizeImage(r.images[0] ?? r.imageUrl, 300)} alt={r.name} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
                     : <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-ink-soft to-brand text-4xl font-bold text-white/80">{r.name.charAt(0).toUpperCase()}</div>}
                   <div className="p-3">
                     <p className="text-sm font-medium leading-snug">{r.name}</p>

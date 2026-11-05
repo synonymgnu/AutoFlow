@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { requireStoreRole } from "@/lib/permissions";
 import { brl } from "@/lib/format";
-import { alternarStatus, excluirProduto, getProdutosPaginados } from "./actions";
+import { alternarStatus, excluirProduto } from "./actions";
+import { getProdutosPaginados } from "@/lib/admin-products";
+import { optimizeImage } from "@/lib/image";
 import { ConfirmButton } from "@/components/painel/confirm-button";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: Promise<{ page?: string }> | { page?: string };
+  searchParams: Promise<{ page?: string }>;
 }
 
 export default async function ProdutosPage({ searchParams }: PageProps) {
@@ -59,8 +61,12 @@ export default async function ProdutosPage({ searchParams }: PageProps) {
                     {p.images[0] ?? p.imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={p.images[0] ?? p.imageUrl ?? ""}
+                        src={optimizeImage(p.images[0] ?? p.imageUrl, 48)}
                         alt=""
+                        width={48}
+                        height={48}
+                        loading="lazy"
+                        decoding="async"
                         className="h-12 w-12 rounded border border-line object-cover"
                       />
                     ) : (

@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentStore } from "@/lib/store";
 import { getStorefrontShowcase } from "@/lib/storefront-showcase";
+import { optimizeImage } from "@/lib/image";
 
 import { AddToCart } from "@/components/storefront/add-to-cart";
 import { OfferCarousel, type Offer } from "@/components/ui/offer-carousel";
@@ -57,7 +58,79 @@ export default async function Vitrine({
       : {}),
   };
 
-  const [categories, found, showcase, totalCount] = await Promise.all([
+  const productSelect = {
+    id: true,
+    slug: true,
+    name: true,
+    brand: true,
+    images: true,
+    imageUrl: true,
+    brandRef: { select: { name: true } },
+    variants: {
+      where: { isActive: true, stock: { gt: 0 } },
+      select: { id: true, name: true, price: true },
+      orderBy: { price: "asc" },
+    },
+  } satisfies Prisma.ProductSelect;
+
+  const byPrice = ordem === "menor" || ordem === "maior";
+
+  // Ordenar por preço precisa valer para o catálogo todo, não só para a página
+  // atual: busca só id + menor preço (leve), ordena, e carrega apenas os 8 da página.
+  async function listByPrice() {
+    const all = await prisma.product.findMany({
+      where: productsWhere,
+      select: {
+        id: true,
+        variants: {
+          where: { isActive: true, stock: { gt: 0 } },
+          select: { price: true },
+          orderBy: { price: "asc" },
+          take: 1,
+        },
+      },
+    });
+
+    // Sem estoque vai sempre para o fim da lista.
+    const price = (p: (typeof all)[number]) =>
+      p.variants[0] ? Number(p.variants[0].price) : null;
+    const sorted = all.sort((a, b) => {
+      const pa = price(a);
+      const pb = price(b);
+      if (pa === null && pb === null) return 0;
+      if (pa === null) return 1;
+      if (pb === null) return -1;
+      return ordem === "menor" ? pa - pb : pb - pa;
+    });
+
+    const ids = sorted.slice(skip, skip + ITEMS_PER_PAGE).map((p) => p.id);
+    const rows = await prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: productSelect,
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    return {
+      items: ids.map((id) => byId.get(id)!).filter(Boolean),
+      total: sorted.length,
+    };
+  }
+
+  async function listByDate() {
+    const [items, total] = await Promise.all([
+      prisma.product.findMany({
+        where: productsWhere,
+        select: productSelect,
+        orderBy: { createdAt: "desc" },
+        take: ITEMS_PER_PAGE,
+        skip,
+      }),
+      prisma.product.count({ where: productsWhere }),
+    ]);
+    return { items, total };
+  }
+
+  const [categories, listing, showcase] = await Promise.all([
     prisma.category.findMany({
       where: {
         storeId: store.id,
@@ -65,48 +138,13 @@ export default async function Vitrine({
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
-
-    prisma.product.findMany({
-      where: productsWhere,
-      include: {
-        brandRef: { select: { name: true } },
-        variants: {
-          where: {
-            isActive: true,
-            stock: { gt: 0 },
-          },
-          select: {
-            id: true,
-            name: true,
-            price: true,
-          },
-          orderBy: { price: "asc" },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      take: ITEMS_PER_PAGE,
-      skip,
-    }),
-
+    byPrice ? listByPrice() : listByDate(),
     getStorefrontShowcase(store.id),
-
-    prisma.product.count({
-      where: productsWhere,
-    }),
   ]);
 
+  const products = listing.items;
+  const totalCount = listing.total;
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
-
-  const pr = (p: (typeof found)[number], none: number) =>
-    p.variants.length ? Number(p.variants[0].price) : none;
-
-  // Mantém a ordenação em memória (agora aplicada apenas aos itens da página atual)
-  const products =
-    ordem === "menor"
-      ? [...found].sort((a, b) => pr(a, Infinity) - pr(b, Infinity))
-      : ordem === "maior"
-      ? [...found].sort((a, b) => pr(b, -1) - pr(a, -1))
-      : found;
 
   // url para troca de Categorias (reseta a página para 1) provavelmente aqui será onde criar a nova implementação de categorizar por estágios de lavagem.
   const getCategoryUrl = (c?: string) => {
@@ -181,7 +219,7 @@ export default async function Vitrine({
           const discountedVariant = product.variants.find(
             (variant) =>
               variant.compareAtPrice !== null &&
-              Number(variant.compareAtPrice) > Number(variant.price)
+              variant.compareAtPrice > variant.price
           );
 
           const variant =
@@ -189,10 +227,8 @@ export default async function Vitrine({
               ? discountedVariant ?? product.variants[0]
               : product.variants[0];
 
-          const price = Number(variant.price);
-          const originalPrice = variant.compareAtPrice
-            ? Number(variant.compareAtPrice)
-            : null;
+          const price = variant.price;
+          const originalPrice = variant.compareAtPrice;
 
           const hasDiscount = originalPrice !== null && originalPrice > price;
 
@@ -202,7 +238,7 @@ export default async function Vitrine({
 
           return {
             id: product.id,
-            imageSrc: product.images[0] ?? product.imageUrl ?? "/logo.png",
+            imageSrc: product.image ? optimizeImage(product.image, 285) : "/logo.png",
             imageAlt: product.name,
             tag:
               section.key === "OFFERS"
@@ -212,8 +248,10 @@ export default async function Vitrine({
                 : "Em destaque",
             title: product.name,
             description,
-            brandLogoSrc: product.brandRef?.logoUrl ?? undefined,
-            brandName: product.brandRef?.name ?? product.brand ?? store.name,
+            brandLogoSrc: product.brandLogoUrl
+              ? optimizeImage(product.brandLogoUrl, 36)
+              : undefined,
+            brandName: product.brandName ?? product.brand ?? store.name,
             href: `/produto/${product.slug}`,
           };
         });
@@ -308,7 +346,7 @@ export default async function Vitrine({
           </p>
         ) : (
           <ul className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {products.map((p) => (
+            {products.map((p, i) => (
               <li
                 key={p.id}
                 className="relative overflow-hidden rounded-xl border border-line bg-white transition-shadow hover:shadow-lg"
@@ -322,8 +360,12 @@ export default async function Vitrine({
                 {p.images[0] ?? p.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={p.images[0] ?? p.imageUrl ?? ""}
+                    src={optimizeImage(p.images[0] ?? p.imageUrl, 320)}
                     alt={p.name}
+                    width={640}
+                    height={480}
+                    loading={i < 4 ? "eager" : "lazy"}
+                    decoding="async"
                     className="block aspect-[4/3] w-full object-contain"
                   />
                 ) : (
